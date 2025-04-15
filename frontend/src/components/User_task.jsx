@@ -10,6 +10,9 @@ const Usertask = () => {
   const { authUser } = useAuthContext();
   const navigate = useNavigate();
   const [completedTasks, setCompletedTasks] = useState({});
+  const [verificationTask, setVerificationTask] = useState(null);
+  const [mathAnswer, setMathAnswer] = useState('');
+  const [verificationError, setVerificationError] = useState('');
 
   // Load completed tasks from localStorage on initial render
   useEffect(() => {
@@ -25,6 +28,7 @@ const Usertask = () => {
       const fetchUserPlansAndTasks = async () => {
         try {
           const token = authUser.token || localStorage.getItem("token");
+          const baseURL = import.meta.env.VITE_API_BASE_URL;
 
           if (!token) {
             console.error("No token found, authorization denied.");
@@ -32,8 +36,6 @@ const Usertask = () => {
             setLoading(false);
             return;
           }
-
-          const baseURL = import.meta.env.VITE_API_BASE_URL;
 
           const response = await axios.post(
             `${baseURL}/api/userplan/userplanswithtasks/${authUser._id}`,
@@ -48,14 +50,14 @@ const Usertask = () => {
 
           if (response.status === 200) {
             setUserPlans(response.data.userPlans || []);
-            setError(null); // Clear any errors if request succeeds
+            setError(null);
           } else {
             console.error(response.data.message);
             setError(response.data.message);
           }
         } catch (error) {
           console.error("Error fetching user plans:", error);
-          setError("");
+          setError("Something went wrong while fetching tasks.");
         } finally {
           setLoading(false);
         }
@@ -65,23 +67,59 @@ const Usertask = () => {
     }
   }, [authUser]);
 
-  // Handle the task click
   const handleTaskClick = async (taskId, taskUrl) => {
-    if (completedTasks[taskId] && Date.now() - completedTasks[taskId] < 24 * 60 * 60 * 1000) {
-      return;
-    }
-
-    localStorage.setItem('redirectToTaskCount', taskId);
-
     try {
       const token = authUser.token || localStorage.getItem("token");
       const baseURL = import.meta.env.VITE_API_BASE_URL;
 
-      window.location.href = taskUrl;
+      // First check task status with backend
+      const response = await axios.get(
+        `${baseURL}/api/usertask/task/${taskId}/user/${authUser._id}`,
+        {
+          headers: {
+            "Authorization": `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.data.isCompleted) {
+        alert(`Task already completed. Available again at ${new Date(response.data.nextAvailable).toLocaleString()}`);
+        return;
+      }
+
+      // If not completed, proceed with task
+      setVerificationTask({
+        id: taskId,
+        url: taskUrl,
+        price: response.data.taskPrice,
+        correctAnswer: response.data.mathQuestion.correctAnswer,
+        mathQuestion: response.data.mathQuestion.question
+      });
       
-      await axios.post(
-        `${baseURL}/api/tasks/task/${taskId}`,
-        {},
+      window.open(taskUrl, '_blank');
+    } catch (error) {
+      console.error('Error checking task status:', error);
+      setVerificationError('Failed to verify task status. Please try again.');
+    }
+  };
+
+  const verifyMathAnswer = async () => {
+    if (!verificationTask || parseInt(mathAnswer) !== verificationTask.correctAnswer) {
+      setVerificationError('Incorrect answer. Please try again.');
+      return;
+    }
+  
+    try {
+      const token = authUser.token || localStorage.getItem("token");
+      const baseURL = import.meta.env.VITE_API_BASE_URL;
+  
+      const response = await axios.post(
+        `${baseURL}/api/usertask/task/${verificationTask.id}/user/${authUser._id}/submit`,
+        {
+          answer: mathAnswer,
+          correctAnswer: verificationTask.correctAnswer,
+          taskPrice: verificationTask.price
+        },
         {
           headers: {
             "Content-Type": "application/json",
@@ -89,34 +127,43 @@ const Usertask = () => {
           },
         }
       );
-
+  
+      // Update local state
       const newCompletedTasks = {
         ...completedTasks,
-        [taskId]: Date.now()
+        [verificationTask.id]: Date.now()
       };
       setCompletedTasks(newCompletedTasks);
       localStorage.setItem('completedTasks', JSON.stringify(newCompletedTasks));
-
+  
+      // Update UI
       setUserPlans(prevPlans => 
         prevPlans.map(plan => ({
           ...plan,
           tasks: plan.tasks.map(task => 
-            task._id === taskId ? { ...task, completed: true } : task
+            task._id === verificationTask.id ? { 
+              ...task, 
+              completed: true,
+              lastCompleted: new Date().toISOString()
+            } : task
           )
         }))
       );
+  
+      setVerificationTask(null);
+      setVerificationError('');
+      setMathAnswer('');
+      
+      alert(`Task completed! Rs. ${verificationTask.price} added to your balance. Total earnings: Rs. ${response.data.newBalance}`);
+  
     } catch (error) {
-      console.error("Error:", error);
+      if (error.response?.data?.message === 'Task already completed recently') {
+        alert(`Task already completed. Available again at ${new Date(error.response.data.nextAvailable).toLocaleString()}`);
+      } else {
+        setVerificationError('Failed to complete task. Please try again.');
+      }
     }
   };
-
-  useEffect(() => {
-    const taskId = localStorage.getItem('redirectToTaskCount');
-    if (taskId) {
-      localStorage.removeItem('redirectToTaskCount');
-      window.location.href = `/taskcount/${taskId}`;
-    }
-  }, []);
 
   const isTaskOnCooldown = (taskId) => {
     return completedTasks[taskId] && Date.now() - completedTasks[taskId] < 24 * 60 * 60 * 1000;
@@ -124,32 +171,27 @@ const Usertask = () => {
 
   const getRemainingCooldownTime = (taskId) => {
     if (!completedTasks[taskId]) return null;
-    
+
     const timePassed = Date.now() - completedTasks[taskId];
     const remainingTime = 24 * 60 * 60 * 1000 - timePassed;
-    
+
     if (remainingTime <= 0) return null;
-    
+
     const hours = Math.floor(remainingTime / (60 * 60 * 1000));
     const minutes = Math.floor((remainingTime % (60 * 60 * 1000)) / (60 * 1000));
-    
+
     return `${hours}h ${minutes}m`;
   };
 
-  // Check if user has any active plans with tasks
-  const hasActivePlansWithTasks = userPlans?.some(plan => 
-    plan.planId && 
-    plan.state === 'active' && 
+  const hasActivePlansWithTasks = userPlans?.some(plan =>
+    plan.planId &&
+    plan.state === 'active' &&
     plan.tasks?.length > 0
   );
 
   if (loading) return <div className="text-center p-8">Loading...</div>;
-  
-  // Show error message if there's an error
-  if (error) return <div className="text-center p-8 text-red-500">{error}</div>;
-  
-  // Show purchase plan message if no active plans
-  if (!hasActivePlansWithTasks) {
+
+  if (error && !hasActivePlansWithTasks) {
     return (
       <div className="text-center p-8">
         <h2 className="text-2xl font-bold text-center my-4">Your Active Plans and Tasks</h2>
@@ -167,9 +209,44 @@ const Usertask = () => {
     );
   }
 
-  // Show active plans with tasks
+  if (error) return <div className="text-center p-8 text-red-500">{error}</div>;
+
   return (
     <div className="p-4">
+      {verificationTask && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg max-w-md w-full">
+            <h3 className="text-xl font-bold mb-4">Verify Task Completion</h3>
+            <p className="mb-4">Please solve this simple math problem to confirm you completed the task:</p>
+            <p className="text-2xl font-bold text-center my-4">{verificationTask.mathQuestion}</p>
+            <input
+              type="number"
+              value={mathAnswer}
+              onChange={(e) => setMathAnswer(e.target.value)}
+              className="w-full p-2 border rounded mb-4"
+              placeholder="Your answer"
+            />
+            {verificationError && (
+              <p className="text-red-500 mb-4">{verificationError}</p>
+            )}
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={() => setVerificationTask(null)}
+                className="px-4 py-2 bg-gray-300 rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={verifyMathAnswer}
+                className="px-4 py-2 bg-blue-500 text-white rounded"
+              >
+                Verify
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <h2 className="text-2xl font-bold text-center my-4">Your Active Plans and Tasks</h2>
       {userPlans
         ?.filter(plan => plan.planId && plan.state === 'active' && plan.tasks?.length > 0)
@@ -184,12 +261,12 @@ const Usertask = () => {
                 <p><span className="font-semibold">Total Profit:</span> Rs. {plan.planId.totalProfit}</p>
               </div>
             </div>
-            
+
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               {plan.tasks.map((task) => {
                 const isCooldown = isTaskOnCooldown(task._id);
                 const remainingTime = getRemainingCooldownTime(task._id);
-                
+
                 return (
                   <div key={task._id} className="p-4 border rounded-lg">
                     <div>
@@ -205,9 +282,7 @@ const Usertask = () => {
                       <div className="mt-2 flex justify-end">
                         <button
                           onClick={() => !isCooldown && handleTaskClick(task._id, task.url)}
-                          className={`px-4 py-2 rounded ${
-                            isCooldown ? 'bg-gray-400' : 'bg-blue-500 hover:bg-blue-600'
-                          } text-white`}
+                          className={`px-4 py-2 rounded ${isCooldown ? 'bg-gray-400' : 'bg-blue-500 hover:bg-blue-600'} text-white`}
                           disabled={isCooldown}
                         >
                           {isCooldown ? 'Completed' : 'Start Task'}

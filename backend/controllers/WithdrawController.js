@@ -170,7 +170,6 @@ export const fetchWithdrawalRequestByUserId = async (req, res) => {
   try {
     const { userId } = req.params; // Extract userId from URL parameters
 
-    console.log('Requested userId:', userId); // Debugging log
 
     // Fetch user's earnings
     const userEarnings = await Earnings.findOne({ userId });

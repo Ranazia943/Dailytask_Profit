@@ -48,6 +48,7 @@ import Usertask from './components/User_task'
 import { Toaster } from "react-hot-toast";  // Import Toaster component
 import All_Task from "./components/admin/All_Task"
 import TaskCount from './components/TaskCount'
+import TaskRedirect from "./components/TaskRedirect";
 const App = () => {
   
   const location = useLocation();
@@ -110,6 +111,7 @@ const App = () => {
         <Route path="/usertask" element={<ProtectedRoute><Usertask /></ProtectedRoute>} />
         <Route path="/notification" element={<ProtectedRoute><Notification setUnreadCount={setUnreadCount} /></ProtectedRoute>} />
         <Route path="/taskcount/:taskId" element={<TaskCount />} /> {/* Dynamic task page */}
+        <Route path="/taskredirect/:taskId" element={<TaskRedirect />} />
 
         {/* Admin Routes */}
          {/* Admin Routes */}

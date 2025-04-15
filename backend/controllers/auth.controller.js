@@ -9,7 +9,7 @@ import Earnings from "../models/earning.model.js"; // Import Earnings model
 import UserPlan from '../models/userplan.model.js'
 import mongoose from "mongoose";
 import ReferralEarnings from '../models/ReferralEarnings.model.js'
-
+import UserTaskProgress from '../models/UserTaskProgress.model.js'
 import WithdrawalRequest from '../models/WithdrawalRequest.js'; // Add this import at the top
 
 export const registerUser = async (req, res) => {
@@ -154,7 +154,8 @@ export const deleteUserById = async (req, res) => {
       userPlansResult,
       earningsResult,
       referralEarningsResult,
-      withdrawalRequestsResult
+      withdrawalRequestsResult,
+      userTaskProgressResult
     ] = await Promise.all([
       // Delete user plans
       UserPlan.deleteMany({ userId: userObjectId }),
@@ -171,7 +172,10 @@ export const deleteUserById = async (req, res) => {
       }),
       
       // Delete user's withdrawal requests
-      WithdrawalRequest.deleteMany({ userId: userObjectId })
+      WithdrawalRequest.deleteMany({ userId: userObjectId }),
+      
+      // Delete user's task progress
+      UserTaskProgress.deleteMany({ userId: userObjectId })
     ]);
 
     // Handle referral relationships
@@ -200,7 +204,8 @@ export const deleteUserById = async (req, res) => {
         tasks: taskIds.length,
         earnings: earningsResult.deletedCount,
         referralEarnings: referralEarningsResult.deletedCount,
-        withdrawalRequests: withdrawalRequestsResult.deletedCount
+        withdrawalRequests: withdrawalRequestsResult.deletedCount,
+        userTaskProgress: userTaskProgressResult.deletedCount
       }
     });
 

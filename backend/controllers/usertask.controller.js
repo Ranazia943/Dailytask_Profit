@@ -1,37 +1,51 @@
+
 import UserTaskProgress from '../models/UserTaskProgress.model.js';
 import Task from '../models/task.model.js';
 import Earnings from '../models/earning.model.js';
-import Plan from '../models/plan.model.js'; // Import Plan model
-
-// Fetch task details for the user
+import User from '../models/user.model.js';
+// Fetch task details for the user with completion check
 export const getTaskForUser = async (req, res) => {
   try {
     const { taskId, userId } = req.params;
 
-    // Fetch the task by ID and populate the associated planId
+    // Check if task was completed in last 24 hours
+    const lastCompletion = await UserTaskProgress.findOne({
+      taskId,
+      userId,
+      status: 'completed',
+      completedAt: { $gt: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+    });
+
+    if (lastCompletion) {
+      return res.status(200).json({
+        message: 'Task already completed recently',
+        isCompleted: true,
+        nextAvailable: new Date(lastCompletion.completedAt.getTime() + 24 * 60 * 60 * 1000)
+      });
+    }
+
+    // Fetch the task details
     const task = await Task.findById(taskId).populate('planId');
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
     }
 
-    // Generate math question numbers
+    // Generate math question
     const number1 = Math.floor(Math.random() * 10) + 1;
     const number2 = Math.floor(Math.random() * 10) + 1;
 
-    // Create a math question object
-    const mathQuestion = {
-      question: `${number1} + ${number2}`,
-      correctAnswer: number1 + number2,
-    };
-
-    // Send the task URL, math question, and plan details to the user
     return res.status(200).json({
-      message: 'Task fetched successfully.',
+      message: 'Task available',
+      isCompleted: false,
       taskUrl: task.url,
-      planId: task.planId ? task.planId._id : null, // Ensure planId exists before accessing
-      planName: task.planId ? task.planId.name : null, // Ensure planName exists before accessing
-      mathQuestion: mathQuestion, // Include the generated math question
+      planId: task.planId?._id,
+      planName: task.planId?.name,
+      mathQuestion: {
+        question: `${number1} + ${number2}`,
+        correctAnswer: number1 + number2
+      },
       taskId: task._id,
+      taskPrice: task.price
     });
   } catch (error) {
     console.error('Error fetching task:', error);
@@ -43,55 +57,88 @@ export const getTaskForUser = async (req, res) => {
 export const submitTaskAnswer = async (req, res) => {
   try {
     const { taskId, userId } = req.params;
-    const { answer } = req.body;
+    const { answer, correctAnswer, taskPrice } = req.body;
 
-    // Log the incoming request body and params
-    console.log('Request Params:', { taskId, userId });
-    console.log('Request Body:', req.body);
-
-    // Proceed with the rest of your logic
-    const task = await Task.findById(taskId).populate('planId');
-    if (!task) {
-      return res.status(404).json({ message: 'Task not found' });
+    // Validate answer
+    if (parseInt(answer) !== parseInt(correctAnswer)) {
+      return res.status(400).json({ message: 'Incorrect answer' });
     }
 
-    const correctAnswer = task.mathQuestion ? task.mathQuestion.correctAnswer : null;
-    if (!correctAnswer) {
-      return res.status(400).json({ message: 'Task does not have a correct answer.' });
+    // Check if task was already completed in last 24 hours
+    const existingCompletion = await UserTaskProgress.findOne({
+      taskId,
+      userId,
+      status: 'completed',
+      completedAt: { $gt: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+    });
+
+    if (existingCompletion) {
+      return res.status(400).json({
+        message: 'Task already completed recently',
+        nextAvailable: new Date(existingCompletion.completedAt.getTime() + 24 * 60 * 60 * 1000)
+      });
     }
 
-    if (parseInt(answer) !== correctAnswer) {
-      return res.status(400).json({ message: 'Incorrect answer. Please try again.' });
-    }
-
-    // After validating the answer, create or update task progress
-    let userTaskProgress = await UserTaskProgress.findOne({ taskId, userId });
-    if (!userTaskProgress) {
-      // If the progress does not exist, create a new record
-      userTaskProgress = new UserTaskProgress({
-        taskId,
-        userId,
+    // Record task completion
+    await UserTaskProgress.findOneAndUpdate(
+      { taskId, userId },
+      {
         status: 'completed',
-        answer: parseInt(answer),
+        mathQuestionAnswer: answer,
+        completedAt: new Date()
+      },
+      { upsert: true, new: true }
+    );
+
+    // Get current date without time for daily earnings tracking
+    const currentDate = new Date();
+    currentDate.setHours(0, 0, 0, 0);
+
+    // Update or create earnings record
+    let earnings = await Earnings.findOne({ userId });
+    
+    if (!earnings) {
+      // Create new earnings record if doesn't exist
+      earnings = new Earnings({
+        userId,
+        totalEarnings: taskPrice,
+        dailyEarnings: [{
+          date: currentDate,
+          amount: taskPrice
+        }]
       });
     } else {
-      // If the progress exists, update it
-      userTaskProgress.status = 'completed';
-      userTaskProgress.answer = parseInt(answer);
+      // Update existing earnings record
+      earnings.totalEarnings += taskPrice;
+      
+      // Check if daily earnings entry exists for today
+      const todayEarning = earnings.dailyEarnings.find(e => 
+        e.date.getTime() === currentDate.getTime()
+      );
+      
+      if (todayEarning) {
+        todayEarning.amount += taskPrice;
+      } else {
+        earnings.dailyEarnings.push({
+          date: currentDate,
+          amount: taskPrice
+        });
+      }
     }
-
-    await userTaskProgress.save(); // Save the progress to the database
-
-    // You can also update earnings or other logic here as needed
-    const earnings = new Earnings({
-      userId,
-      taskId,
-      amount: 10, // Example value for task completion
-    });
 
     await earnings.save();
 
-    return res.status(200).json({ message: 'Task completed successfully!' });
+    // Update user's balance
+    await User.findByIdAndUpdate(
+      userId,
+      { $inc: { balance: taskPrice } }
+    );
+
+    return res.status(200).json({ 
+      message: 'Task completed successfully!',
+      earnings: taskPrice,
+      newBalance: earnings.totalEarnings
+    });
   } catch (error) {
     console.error('Error completing task:', error);
     res.status(500).json({ message: 'Server error' });

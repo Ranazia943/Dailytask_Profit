@@ -1,144 +1,130 @@
-import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { useAuthContext } from "../authcontext/AuthContext"; // Import useAuthContext
+import { useEffect, useState } from "react";
+import { useAuthContext } from "../authcontext/AuthContext";
+import axios from "axios";
 
-const TaskCount = () => {
-  const { taskId } = useParams(); // Retrieve taskId from URL
-  const { authUser } = useAuthContext(); // Get authUser from AuthContext
-  const [taskDetails, setTaskDetails] = useState(null);  // Store task details
-  const [answer, setAnswer] = useState('');
-  const [progress, setProgress] = useState(0);
-  const [message, setMessage] = useState('');
-  const [num1, setNum1] = useState(null);
-  const [num2, setNum2] = useState(null);
-  const [correctAnswer, setCorrectAnswer] = useState(null);
-  const [userId, setUserId] = useState(''); // Assume you get this from context or props
+const Withdrawl_history = () => {
+  const [withdrawalHistory, setWithdrawalHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const { authUser } = useAuthContext();
 
-  // Fetch task details when taskId changes or on component mount
   useEffect(() => {
-    if (!authUser) {
-      console.log('User is not authenticated yet');
-      return; // Avoid running further if authUser is not available
-    }
+    if (authUser) {
+      const fetchWithdrawalHistory = async () => {
+        try {
+          const token = authUser.token || localStorage.getItem("token");
 
-    // Log the userId and taskId to the console
-    console.log('User ID from authContext:', authUser?.id); // Logs userId
-    console.log('Task ID from URL:', taskId); // Logs taskId
+          if (!token) {
+            console.error("No token found, authorization denied.");
+            return;
+          }
+          const baseURL = import.meta.env.VITE_API_BASE_URL;
+          const response = await axios.get(`${baseURL}/api/withdrawl/${authUser._id}`,
+            {
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
 
-    const randomNum1 = Math.floor(Math.random() * 10) + 1;
-    const randomNum2 = Math.floor(Math.random() * 10) + 1;
-    setNum1(randomNum1);
-    setNum2(randomNum2);
-    setCorrectAnswer(randomNum1 + randomNum2); // Sum of the two numbers
-
-    setUserId(authUser?.id || ''); // Set the userId from the context
-
-    // Fetch the task details from the server
-    const fetchTaskDetails = async () => {
-      const baseURL = import.meta.env.VITE_API_BASE_URL;
-      try {
-        const response = await fetch(`${baseURL}/api/tasks/task/${taskId}`);
-        if (response.ok) {
-          const task = await response.json();
-          setTaskDetails(task);  // Set the task details in state
-        } else {
-          setMessage('Failed to load task details.');
+          if (response.data) {
+            console.log("Withdrawal History Data:", response.data); // Log data for debugging
+            setWithdrawalHistory(response.data.data);
+            setLoading(false);
+          } else {
+            setLoading(false);
+            console.error("Error: No data found.");
+          }
+        } catch (error) {
+          console.error("Error fetching withdrawal history:", error);
+          setLoading(false);
         }
-      } catch (error) {
-        console.error('Error fetching task details:', error);
-        setMessage('Error fetching task details.');
-      }
-    };
+      };
 
-    fetchTaskDetails();
-  }, [authUser, taskId]); // Run when authUser or taskId changes
+      fetchWithdrawalHistory();
+    }
+  }, [authUser]);
 
-  const question = `${num1} + ${num2} = ?`;
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    // Validate taskId format using regular expression (MongoDB ObjectId is a 24-character hex string)
-    const objectIdPattern = /^[0-9a-fA-F]{24}$/;
-    if (!objectIdPattern.test(taskId)) {
-      setMessage('Invalid taskId format.');
-      return;
-    }
-  
-    if (!answer || isNaN(answer)) {
-      setMessage('Please enter a valid answer!');
-      return;
-    }
-  
-    if (parseInt(answer) !== correctAnswer) {
-      setMessage('Incorrect answer. Please try again.');
-      setProgress(0); // Reset the progress bar to 0 if the answer is incorrect
-      return;
-    }
-  
-    // If the answer is correct
-    setProgress(100); // Mark task as completed visually
-    setMessage('Correct! Task completed successfully.');
-  
-    // Fetch base URL from environment variables (VITE_API_BASE_URL)
-    const baseURL = import.meta.env.VITE_API_BASE_URL;
-  
-    try {
-      const response = await fetch(`${baseURL}/api/userplan/earnings/add-task-price`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId: userId, // Log userId here
-          taskId: taskId, // Pass the taskId from URL
-        }),
-      });
-  
-      if (response.ok) {
-        const result = await response.json();
-        setMessage('Earnings updated successfully!');
-      } else {
-        setMessage('Failed to update earnings.');
-      }
-    } catch (error) {
-      console.error('Error updating earnings:', error);
-      setMessage('Failed to update earnings.');
-    }
+  const handleViewProof = (image) => {
+    setSelectedImage(image);
   };
 
-  // Display task details when available
-  if (!taskDetails) {
-    return <div>Loading task details...</div>;
-  }
+  const closeImageView = () => {
+    setSelectedImage(null);
+  };
 
   return (
-    <div className="task-count-container">
-      <h2>Complete Your Task</h2>
-      <div className="progress-bar">
-        <progress value={progress} max="100"></progress>
-        <span>{progress}%</span>
+    <div className="min-h-screen bg-[#f9f9f9] py-4">
+      <div className="wrapper">
+        <h2 className="text-center my-8 text-3xl font-[600] font-sans">Withdrawal History</h2>
+      </div>
+      <div className="cards-wrapper mb-24 grid max-[850px]:grid-cols-1 max-[850px]:gap-4 max-[850px]:mx-2 grid-cols-2 md:gap-4 lg:gap-8 md:mx-8 lg:mx-16">
+        {loading ? (
+          <p className="text-center">Loading...</p>
+        ) : withdrawalHistory.length > 0 ? (
+          withdrawalHistory.map((history, index) => (
+            <div
+              key={index}
+              data-aos="zoom-in"
+              data-aos-duration="3000"
+              className="card border relative p-2 max-[850px]:w-[450px] max-[520px]:w-full max-[850px]:mx-auto rounded-xl flex justify-start gap-2 bg-green-50"
+            >
+              <h2>
+                <i className="fa-solid fa-check border p-1 rounded-full bg-green-400 text-white mr-2"></i>
+              </h2>
+              <div className="wrapp">
+                <div>
+                  <h2 className="text-xl font-[700]">{history.status}</h2>
+                  <p className="text-xl font-[350] w-44 text-gray-700 mt-2">{history.paymentGateway}</p>
+                  
+                  <p className="text-base font-[350]">Account Name: {history.gatewayAccountName}</p>
+                  <p className="text-base font-[350]"> Account Number: {history.gatewayAccountNumber}</p>
+                 
+                  <h3 className="my-4 text-lg font-[600] text-yellow-400">{history.processedDate}</h3>
+                  {history.adminScreenshot && (
+                    <div>
+                     
+ <div> 
+    <br></br>
+                      <button className=" bg-green-400 shadow-md focus:shadow-none text-white max-[850px]:text-sm px-2 min-[850px]:px-3 py-1 min-[850px]:py-2 rounded-md mx-1 min-[850px]:mx-2"   onClick={() => handleViewProof(history.adminScreenshot)}>View Proof</button>
+                    </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="absolute bottom-4 right-2">
+                <p className="text-end m-2 text-xl font-[500] text-red-500">
+                  Rs. {history.amount}
+                </p>
+              </div>
+            </div>
+          ))
+        ) : (
+          <p className="text-center">No withdrawal history found.</p>
+        )}
       </div>
 
-      <div>
-        <p><strong>Task Price:</strong> ${taskDetails.price}</p>
-
-        <p><strong>Question:</strong> {question}</p>
-
-        <form onSubmit={handleSubmit}>
-          <input
-            type="number"
-            placeholder="Enter your answer"
-            value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
-          />
-          <button type="submit">Submit</button>
-        </form>
-
-        {message && <p>{message}</p>}
-      </div>
+      {/* Full-screen Image View */}
+      {selectedImage && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+          <div className="relative">
+            <img
+              src={selectedImage}
+              alt="Proof"
+              className=" max-w-full object-contain"
+            />
+            <button
+              className="absolute top-2 right-2 bg-white p-2 rounded-full text-black"
+              onClick={closeImageView}
+            >
+              X
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-export default TaskCount;
+export default Withdrawl_history;

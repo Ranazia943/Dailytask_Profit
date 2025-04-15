@@ -50,9 +50,7 @@ const WithdrawRequest = () => {
       };
 
       const baseURL = import.meta.env.VITE_API_BASE_URL;
-      const response = await axios.post(
-        `${baseURL}/api/withdrawl/request/${authUser._id}`,
-        requestData,
+      const response = await axios.post(`${baseURL}/api/withdrawl/request/${authUser._id}`,requestData,
         {
           headers: {
             "Content-Type": "application/json",
