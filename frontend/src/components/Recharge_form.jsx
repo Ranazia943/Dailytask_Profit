@@ -141,7 +141,7 @@ export const Recharge_form = () => {
       }
     } catch (error) {
       console.error("Error in purchase plan:", error);
-      toast.error("There was an issue processing your payment. Please try again.");
+      toast.error("There was an issue processing your payment. Please Try different Tax id for new plan.");
       setIsSubmitted(false);
     }
   };

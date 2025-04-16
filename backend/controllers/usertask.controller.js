@@ -1,22 +1,22 @@
+// Backend Controller Updates (Fix 24-hour cooldown logic)
 
 import UserTaskProgress from '../models/UserTaskProgress.model.js';
 import Task from '../models/task.model.js';
 import Earnings from '../models/earning.model.js';
 import User from '../models/user.model.js';
-// Fetch task details for the user with completion check
+import mongoose from 'mongoose';
+
 export const getTaskForUser = async (req, res) => {
   try {
     const { taskId, userId } = req.params;
 
-    // Check if task was completed in last 24 hours
     const lastCompletion = await UserTaskProgress.findOne({
       taskId,
       userId,
-      status: 'completed',
-      completedAt: { $gt: new Date(Date.now() - 24 * 60 * 60 * 1000) }
-    });
+      status: 'completed'
+    }).sort({ completedAt: -1 });
 
-    if (lastCompletion) {
+    if (lastCompletion && Date.now() - new Date(lastCompletion.completedAt).getTime() < 24 * 60 * 60 * 1000) {
       return res.status(200).json({
         message: 'Task already completed recently',
         isCompleted: true,
@@ -24,13 +24,9 @@ export const getTaskForUser = async (req, res) => {
       });
     }
 
-    // Fetch the task details
     const task = await Task.findById(taskId).populate('planId');
-    if (!task) {
-      return res.status(404).json({ message: 'Task not found' });
-    }
+    if (!task) return res.status(404).json({ message: 'Task not found' });
 
-    // Generate math question
     const number1 = Math.floor(Math.random() * 10) + 1;
     const number2 = Math.floor(Math.random() * 10) + 1;
 
@@ -53,33 +49,66 @@ export const getTaskForUser = async (req, res) => {
   }
 };
 
+export const getUserTaskStatuses = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'Invalid user ID' });
+    }
+
+    const taskStatuses = await UserTaskProgress.find({ userId })
+      .select('taskId status completedAt')
+      .populate('taskId', 'type price url')
+      .lean();
+
+    const formattedStatuses = taskStatuses.map(status => {
+      const cooldownEnd = new Date(status.completedAt).getTime() + 24 * 60 * 60 * 1000;
+      const isOnCooldown = status.status === 'completed' && Date.now() < cooldownEnd;
+      return {
+        taskId: status.taskId._id,
+        taskType: status.taskId.type,
+        taskPrice: status.taskId.price,
+        taskUrl: status.taskId.url,
+        status: status.status,
+        completedAt: status.completedAt,
+        isCompleted: status.status === 'completed',
+        isOnCooldown,
+        nextAvailable: isOnCooldown ? new Date(cooldownEnd) : null
+      };
+    });
+
+    res.status(200).json(formattedStatuses);
+  } catch (error) {
+    console.error('Error fetching task statuses:', error);
+    res.status(500).json({ 
+      message: 'Server error while fetching task statuses',
+      error: error.message 
+    });
+  }
+};
 
 export const submitTaskAnswer = async (req, res) => {
   try {
     const { taskId, userId } = req.params;
     const { answer, correctAnswer, taskPrice } = req.body;
 
-    // Validate answer
     if (parseInt(answer) !== parseInt(correctAnswer)) {
       return res.status(400).json({ message: 'Incorrect answer' });
     }
 
-    // Check if task was already completed in last 24 hours
     const existingCompletion = await UserTaskProgress.findOne({
       taskId,
       userId,
-      status: 'completed',
-      completedAt: { $gt: new Date(Date.now() - 24 * 60 * 60 * 1000) }
-    });
+      status: 'completed'
+    }).sort({ completedAt: -1 });
 
-    if (existingCompletion) {
+    if (existingCompletion && Date.now() - new Date(existingCompletion.completedAt).getTime() < 24 * 60 * 60 * 1000) {
       return res.status(400).json({
         message: 'Task already completed recently',
         nextAvailable: new Date(existingCompletion.completedAt.getTime() + 24 * 60 * 60 * 1000)
       });
     }
 
-    // Record task completion
     await UserTaskProgress.findOneAndUpdate(
       { taskId, userId },
       {
@@ -90,49 +119,29 @@ export const submitTaskAnswer = async (req, res) => {
       { upsert: true, new: true }
     );
 
-    // Get current date without time for daily earnings tracking
     const currentDate = new Date();
     currentDate.setHours(0, 0, 0, 0);
 
-    // Update or create earnings record
     let earnings = await Earnings.findOne({ userId });
-    
     if (!earnings) {
-      // Create new earnings record if doesn't exist
       earnings = new Earnings({
         userId,
         totalEarnings: taskPrice,
-        dailyEarnings: [{
-          date: currentDate,
-          amount: taskPrice
-        }]
+        dailyEarnings: [{ date: currentDate, amount: taskPrice }]
       });
     } else {
-      // Update existing earnings record
       earnings.totalEarnings += taskPrice;
-      
-      // Check if daily earnings entry exists for today
-      const todayEarning = earnings.dailyEarnings.find(e => 
-        e.date.getTime() === currentDate.getTime()
-      );
-      
+      const todayEarning = earnings.dailyEarnings.find(e => e.date.getTime() === currentDate.getTime());
       if (todayEarning) {
         todayEarning.amount += taskPrice;
       } else {
-        earnings.dailyEarnings.push({
-          date: currentDate,
-          amount: taskPrice
-        });
+        earnings.dailyEarnings.push({ date: currentDate, amount: taskPrice });
       }
     }
 
     await earnings.save();
 
-    // Update user's balance
-    await User.findByIdAndUpdate(
-      userId,
-      { $inc: { balance: taskPrice } }
-    );
+    await User.findByIdAndUpdate(userId, { $inc: { balance: taskPrice } });
 
     return res.status(200).json({ 
       message: 'Task completed successfully!',

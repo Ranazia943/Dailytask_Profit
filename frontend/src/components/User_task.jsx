@@ -9,20 +9,41 @@ const Usertask = () => {
   const [error, setError] = useState(null);
   const { authUser } = useAuthContext();
   const navigate = useNavigate();
-  const [completedTasks, setCompletedTasks] = useState({});
   const [verificationTask, setVerificationTask] = useState(null);
   const [mathAnswer, setMathAnswer] = useState('');
   const [verificationError, setVerificationError] = useState('');
+  const [taskStatuses, setTaskStatuses] = useState({}); // Track task statuses (completed or not)
 
-  // Load completed tasks from localStorage on initial render
-  useEffect(() => {
-    const storedCompletedTasks = localStorage.getItem('completedTasks');
-    if (storedCompletedTasks) {
-      setCompletedTasks(JSON.parse(storedCompletedTasks));
+  // Enhanced fetch function for task statuses
+  const fetchTaskStatuses = async () => {
+    try {
+      const token = authUser.token || localStorage.getItem("token");
+      const baseURL = import.meta.env.VITE_API_BASE_URL;
+      
+      const response = await axios.get(
+        `${baseURL}/api/usertask/status/${authUser._id}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      // Convert array to map for easier access
+      const statusMap = response.data.reduce((map, status) => {
+        map[status.taskId] = status;
+        return map;
+      }, {});
+      
+      setTaskStatuses(statusMap);
+    } catch (error) {
+      console.error("Error fetching task statuses:", error);
     }
-  }, []);
+  };
 
-  // Fetch user plans with tasks once authenticated
+  useEffect(() => {
+    if (authUser) {
+      fetchTaskStatuses();
+    }
+  }, [authUser]);
+
+  // Fetch user plans and tasks
   useEffect(() => {
     if (authUser) {
       const fetchUserPlansAndTasks = async () => {
@@ -71,7 +92,7 @@ const Usertask = () => {
     try {
       const token = authUser.token || localStorage.getItem("token");
       const baseURL = import.meta.env.VITE_API_BASE_URL;
-
+    
       // First check task status with backend
       const response = await axios.get(
         `${baseURL}/api/usertask/task/${taskId}/user/${authUser._id}`,
@@ -81,12 +102,17 @@ const Usertask = () => {
           },
         }
       );
-
+    
       if (response.data.isCompleted) {
-        alert(`Task already completed. Available again at ${new Date(response.data.nextAvailable).toLocaleString()}`);
+        const nextAvailableDate = new Date(response.data.nextAvailable);
+        if (isNaN(nextAvailableDate.getTime())) {
+          alert("Invalid date format. Please check the backend date formatting.");
+        } else {
+          alert(`Task already completed. Available again at ${nextAvailableDate.toLocaleString()}`);
+        }
         return;
       }
-
+    
       // If not completed, proceed with task
       setVerificationTask({
         id: taskId,
@@ -95,14 +121,14 @@ const Usertask = () => {
         correctAnswer: response.data.mathQuestion.correctAnswer,
         mathQuestion: response.data.mathQuestion.question
       });
-      
+    
       window.open(taskUrl, '_blank');
     } catch (error) {
       console.error('Error checking task status:', error);
       setVerificationError('Failed to verify task status. Please try again.');
     }
   };
-
+    
   const verifyMathAnswer = async () => {
     if (!verificationTask || parseInt(mathAnswer) !== verificationTask.correctAnswer) {
       setVerificationError('Incorrect answer. Please try again.');
@@ -128,58 +154,57 @@ const Usertask = () => {
         }
       );
   
-      // Update local state
-      const newCompletedTasks = {
-        ...completedTasks,
-        [verificationTask.id]: Date.now()
-      };
-      setCompletedTasks(newCompletedTasks);
-      localStorage.setItem('completedTasks', JSON.stringify(newCompletedTasks));
-  
-      // Update UI
-      setUserPlans(prevPlans => 
-        prevPlans.map(plan => ({
-          ...plan,
-          tasks: plan.tasks.map(task => 
-            task._id === verificationTask.id ? { 
-              ...task, 
-              completed: true,
-              lastCompleted: new Date().toISOString()
-            } : task
-          )
-        }))
-      );
+      // Update task status in the state
+      setTaskStatuses(prevStatuses => ({
+        ...prevStatuses,
+        [verificationTask.id]: {
+          ...prevStatuses[verificationTask.id],
+          isCompleted: true,
+          nextAvailable: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours cooldown
+        }
+      }));
   
       setVerificationTask(null);
       setVerificationError('');
       setMathAnswer('');
-      
-      alert(`Task completed! Rs. ${verificationTask.price} added to your balance. Total earnings: Rs. ${response.data.newBalance}`);
+  
+      const nextAvailableDate = new Date(response.data.nextAvailable);
+      if (isNaN(nextAvailableDate.getTime())) {
+        alert("Task Completed.");
+      } else {
+        alert(`Task completed! Rs. ${verificationTask.price} added to your balance. Total earnings: Rs. ${response.data.newBalance} : ${nextAvailableDate.toLocaleString()}`);
+      }
   
     } catch (error) {
       if (error.response?.data?.message === 'Task already completed recently') {
-        alert(`Task already completed. Available again at ${new Date(error.response.data.nextAvailable).toLocaleString()}`);
+        const nextAvailableDate = new Date(error.response.data.nextAvailable);
+        if (isNaN(nextAvailableDate.getTime())) {
+          alert("Invalid date format.");
+        } else {
+          alert(`Task already completed. Available again at ${nextAvailableDate.toLocaleString()}`);
+        }
       } else {
         setVerificationError('Failed to complete task. Please try again.');
       }
     }
   };
+  
+  
 
   const isTaskOnCooldown = (taskId) => {
-    return completedTasks[taskId] && Date.now() - completedTasks[taskId] < 24 * 60 * 60 * 1000;
+    const taskStatus = taskStatuses[taskId];
+    return taskStatus && Date.now() - new Date(taskStatus.nextAvailable).getTime() < 24 * 60 * 60 * 1000;
   };
 
   const getRemainingCooldownTime = (taskId) => {
-    if (!completedTasks[taskId]) return null;
+    const taskStatus = taskStatuses[taskId];
+    if (!taskStatus?.nextAvailable) return null;
 
-    const timePassed = Date.now() - completedTasks[taskId];
-    const remainingTime = 24 * 60 * 60 * 1000 - timePassed;
-
+    const remainingTime = new Date(taskStatus.nextAvailable).getTime() - Date.now();
     if (remainingTime <= 0) return null;
 
     const hours = Math.floor(remainingTime / (60 * 60 * 1000));
     const minutes = Math.floor((remainingTime % (60 * 60 * 1000)) / (60 * 1000));
-
     return `${hours}h ${minutes}m`;
   };
 

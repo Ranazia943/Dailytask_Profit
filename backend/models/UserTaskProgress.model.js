@@ -7,6 +7,7 @@ const userTaskProgressSchema = new mongoose.Schema(
       ref: 'User',
       required: true,
     },
+    
     taskId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Task',

@@ -43,6 +43,8 @@ const userPlanSchema = new mongoose.Schema({
   taxId: {
     type: String,
     required: true,
+    unique: true,
+    
   },
   tasks: [{
     type: mongoose.Schema.Types.ObjectId,
