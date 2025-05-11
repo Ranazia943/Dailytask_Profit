@@ -1,22 +1,22 @@
-# Gold Mine Investment App
+# Daily Task Profit - MERN Platform
 
-A fully-featured **MERN** (MongoDB, Express, React, Node.js) based investment application that allows users to invest, track daily earnings, and participate in an affiliate system. This app includes both **User** and **Admin Panels**, automatic earnings calculation, plan requests, and weekly withdrawal requests. It also supports an **affiliate system** where users can refer others to earn commissions.
+**Daily Task Profit** is a full-stack **MERN** (MongoDB, Express, React, Node.js) platform that allows users to earn by completing daily tasks. It includes an affiliate program, purchasable plans for enhanced earnings, and an admin panel to manage users, tasks, and earnings.
 
 ## 🚀 Features
 
 ### For Users:
-- **User Dashboard:** View daily earnings, investment plans, and referral status.
-- **Investment Plans:** Users can choose and request different investment plans with various return rates.
-- **Automatic Daily Earnings:** Users' accounts are updated daily with their earnings based on the investment plan.
-- **Withdrawal Requests:** Users can request a withdrawal once per week.
-- **Referral System:** If **User 1** refers **User 2**, **User 1** earns a **5% one-time commission** from **User 2's plan** purchase.
-- **Email Notifications:** Get updates on plan status, earnings, and withdrawals via email.
+- **Task Completion:** Users can complete daily tasks to earn money.
+- **Earnings Overview:** View current earnings, completed tasks, and pending tasks.
+- **Affiliate Program:** Invite others to join the platform using referral links and earn a commission on their earnings.
+- **Purchasable Plans:** Upgrade your account with premium plans to unlock higher earnings and more tasks.
+- **Email Notifications:** Receive alerts for task status, earnings updates, and withdrawals.
 
 ### For Admins:
-- **Admin Dashboard:** Manage user accounts, approve or reject plan requests, and view earnings across all users.
-- **Approve/Reject Investment Plans:** Admin can approve or reject a user’s investment plan request.
-- **Track User Earnings:** Admin can view all daily earnings and track weekly withdrawals.
-- **Manage Affiliate Earnings:** Admin can see and manage affiliate commissions earned by referrers.
+- **Admin Panel:** Manage all users, track earnings, approve or reject tasks, and handle plan upgrades.
+- **User Management:** View, activate, deactivate, and update user accounts.
+- **Task Management:** Add, update, or remove tasks available for users to complete.
+- **Earnings Tracking:** View daily earnings reports for users and manage withdrawal requests.
+- **Affiliate Earnings:** Track and manage commissions earned by referrers.
 
 ## 🛠️ Technologies Used
 
@@ -36,7 +36,6 @@ A fully-featured **MERN** (MongoDB, Express, React, Node.js) based investment ap
 - `/client` – Frontend React application
 - `/server` – Backend Node.js API
   - `/models` – Mongoose models for database interaction
-  - `/routes` – API routes for user management, investments, and withdrawals
-  - `/controllers` – Functions for handling business logic
-  - `/utils` – Helper utilities, including email sending
-
+  - `/routes` – API routes for task management, user authentication, earnings, etc.
+  - `/controllers` – Business logic for task completion, user registration, affiliate system
+  - `/utils` – Helper utilities, including email sending and referral management
